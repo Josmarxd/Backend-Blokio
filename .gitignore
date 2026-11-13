@@ -1,0 +1,11 @@
+# Variables de entorno
+.env
+.env.*
+!.env.example
+
+# 🔥 CRÍTICO: credenciales de Firebase/Firestore
+secrets/
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
