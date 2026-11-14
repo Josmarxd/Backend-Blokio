@@ -1,39 +1,25 @@
-// config/firestore.js
-require('dotenv').config();
-const { Firestore } = require('@google-cloud/firestore');
+const { applicationDefault, getApps, initializeApp } = require('firebase-admin/app');
+const { getAuth } = require('firebase-admin/auth');
+const { getFirestore } = require('firebase-admin/firestore');
 
-const options = {
-  projectId: process.env.GOOGLE_CLOUD_PROJECT,
-};
+const projectId =
+  process.env.FIREBASE_PROJECT_ID ||
+  process.env.GOOGLE_CLOUD_PROJECT ||
+  process.env.GCLOUD_PROJECT;
 
-// Si definiste un ID personalizado de base de datos, se lo pasamos.
-// Si no, se conecta a "(default)" automáticamente.
-if (process.env.FIRESTORE_DATABASE_ID) {
-  options.databaseId = process.env.FIRESTORE_DATABASE_ID;
+const app = getApps().length
+  ? getApps()[0]
+  : initializeApp({
+      credential: applicationDefault(),
+      ...(projectId ? { projectId } : {}),
+    });
+
+const db = getFirestore(app);
+const auth = getAuth(app);
+
+async function connectDatabase() {
+  await db.collection('_health_check').limit(1).get();
+  console.log(`✅ Firestore conectado (${projectId || 'proyecto ADC'})`);
 }
 
-const db = new Firestore(options);
-
-// Función para probar la conexión al arrancar el servidor.
-async function connectDatabase(maxAttempts = 5) {
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      console.log(`🔌 Conectando a Firestore... (${attempt}/${maxAttempts})`);
-
-      // Firestore no tiene un "ping" como SQL, pero leer una colección
-      // (aunque no exista) confirma que hay conexión y permisos.
-      await db.collection('_health_check').limit(1).get();
-
-      console.log('✅ Conexión a Firestore establecida');
-      console.log(`   Proyecto: ${options.projectId || '(auto)'}`);
-      console.log(`   Base de datos: ${options.databaseId || '(default)'}`);
-      return;
-    } catch (error) {
-      console.error(`⏳ Intento ${attempt} fallido:`, error.message);
-      if (attempt === maxAttempts) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-    }
-  }
-}
-
-module.exports = { db, connectDatabase };
+module.exports = { auth, db, connectDatabase };

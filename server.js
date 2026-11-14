@@ -1,33 +1,29 @@
-// index.js
-require('dotenv').config({ path: './.env' });
-
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
-
-// ← ANTES: const sequelize = require('./config/database');
-// ← AHORA:
-const { db, connectDatabase } = require('./config/firestore');
-
+const { connectDatabase } = require('./config/firestore');
 const routes = require('./routes');
+const errorHandler = require('./middleware/error.middleware');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 const allowedOrigins = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(',')
+  ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim())
   : ['http://localhost:4200'];
 
 app.use(cors({
-  origin: function (origin, callback) {
+  origin(origin, callback) {
     if (!origin) return callback(null, true);
     if (!allowedOrigins.includes(origin)) {
-      const msg =
-        'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
+      const error = new Error('Origen no permitido por la política CORS.');
+      error.status = 403;
+      error.code = 'ORIGIN_NOT_ALLOWED';
+      return callback(error);
     }
     return callback(null, true);
   },
@@ -37,70 +33,57 @@ app.use(cors({
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
-
 app.use(morgan('combined'));
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 1000,
+  limit: 1000,
   standardHeaders: true,
   legacyHeaders: false,
-  message:
-    'Demasiadas peticiones desde esta IP, por favor intente de nuevo en 15 minutos',
+  message: { status: 'error', message: 'Demasiadas peticiones. Intenta más tarde.' },
 });
 app.use('/api', limiter);
 
-const authLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 20,
-  skipSuccessfulRequests: true,
-  message:
-    'Demasiados intentos de inicio de sesión, por favor intente de nuevo en una hora',
-});
-app.locals.authLimiter = authLimiter;
-
-app.use(express.json());
-
+app.use(express.json({ limit: '64kb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
 app.use('/api', routes);
+app.use('/api', (req, res, next) => {
+  const error = new Error('Ruta de API no encontrada.');
+  error.status = 404;
+  error.code = 'NOT_FOUND';
+  next(error);
+});
 
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'OK',
-    message: 'Servidor funcionando',
-    database: 'firestore',
+    database: 'Firestore',
     timestamp: new Date().toISOString(),
   });
 });
 
-app.use((err, req, res, next) => {
-  console.error('❌ Global Error:', err.stack);
-  res.status(err.status || 500).json({
-    status: 'error',
-    message: err.message || 'Error interno del servidor',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
-  });
-});
+app.use(errorHandler);
 
 async function startServer() {
   try {
-    // ← Conexión Firestore
     await connectDatabase();
-
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`🚀 Servidor en http://localhost:${PORT}`);
     });
+    const shutdown = () => {
+      server.close(() => process.exit(0));
+    };
+    process.once('SIGINT', shutdown);
+    process.once('SIGTERM', shutdown);
+    return server;
   } catch (error) {
     console.error('❌ Error al iniciar servidor:', error);
     process.exit(1);
   }
 }
 
-process.on('SIGINT', async () => {
-  console.log('🛑 Cerrando servidor...');
-  // Firestore se cierra solo, no hay .close() obligatorio.
-  process.exit(0);
-});
+if (require.main === module) {
+  startServer();
+}
 
-startServer();
+module.exports = { app, startServer };
