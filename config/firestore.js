@@ -14,12 +14,16 @@ const app = getApps().length
       ...(projectId ? { projectId } : {}),
     });
 
-const db = getFirestore(app);
+const databaseId = process.env.FIRESTORE_DATABASE_ID;
+
+const db = databaseId
+  ? getFirestore(app, databaseId)
+  : getFirestore(app);
 const auth = getAuth(app);
 
 async function connectDatabase() {
   await db.collection('_health_check').limit(1).get();
-  console.log(`✅ Firestore conectado (${projectId || 'proyecto ADC'})`);
+  console.log(`✅ Firestore conectado (${projectId || 'proyecto ADC'}, bd: ${databaseId || '(default)'})`);
 }
 
 module.exports = { auth, db, connectDatabase };

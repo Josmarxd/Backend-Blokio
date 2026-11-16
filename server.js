@@ -11,6 +11,7 @@ const errorHandler = require('./middleware/error.middleware');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const HOST = process.env.HOST || '0.0.0.0';
 
 const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim())
@@ -67,8 +68,9 @@ app.use(errorHandler);
 async function startServer() {
   try {
     await connectDatabase();
-    const server = app.listen(PORT, () => {
-      console.log(`🚀 Servidor en http://localhost:${PORT}`);
+    const server = app.listen(PORT, HOST, () => {
+      console.log(`🚀 Servidor en http://${HOST}:${PORT}`);
+      console.log(`📱 Accesible en tu red local en http://192.168.100.75:${PORT}`);
     });
     const shutdown = () => {
       server.close(() => process.exit(0));
