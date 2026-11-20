@@ -1,0 +1,9 @@
+✅ Firestore conectado (code-js-514422, bd: blokio-puzzle-db)
+🚀 Servidor en http://0.0.0.0:3001
+📱 Accesible en tu red local en http://192.168.1.74:3001
+127.0.0.1 - - [17/Nov/2026:21:36:32 +0000] "GET /health HTTP/1.1" 200 77 "-" "curl/8.22.0"
+127.0.0.1 - - [17/Nov/2026:21:36:32 +0000] "GET /api/rush/leaderboard HTTP/1.1" 200 30 "-" "curl/8.22.0"
+127.0.0.1 - - [17/Nov/2026:21:36:32 +0000] "GET /api/rush/me HTTP/1.1" 401 108 "-" "curl/8.22.0"
+127.0.0.1 - - [17/Nov/2026:21:36:32 +0000] "POST /api/billing/google/verify HTTP/1.1" 401 108 "-" "curl/8.22.0"
+127.0.0.1 - - [17/Nov/2026:21:46:11 +0000] "GET /api/rush/leaderboard HTTP/1.1" 200 30 "-" "curl/8.22.0"
+127.0.0.1 - - [17/Nov/2026:21:46:11 +0000] "GET /health HTTP/1.1" 200 77 "-" "curl/8.22.0"

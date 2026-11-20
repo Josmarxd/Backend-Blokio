@@ -23,6 +23,8 @@ API REST con Express, Firebase Authentication y Cloud Firestore.
 
 El servidor escucha en el puerto `3001` de forma predeterminada. En Cloud Run, usa una cuenta de servicio con acceso a Firestore; no subas credenciales de servicio al repositorio.
 
+Para desplegar en producción sigue `../DEPLOY.md` (Cloud Run + `--dart-define=API_BASE_URL=…` en la app).
+
 ## API
 
 - `GET /health`: estado del servidor.
@@ -30,6 +32,15 @@ El servidor escucha en el puerto `3001` de forma predeterminada. En Cloud Run, u
 - `POST /api/leaderboard/submit`: envía `{ "score": 1200, "level": 4 }`.
 - `GET /api/users/me`: obtiene el perfil autenticado.
 - `PUT /api/users/me/sync`: sincroniza `profile`, `progress`, `inventory` y `settings`. Incluye `revision` al actualizar un perfil existente para detectar cambios concurrentes.
+- `GET /api/users/friends`: lista de amigos reales.
+- `GET /api/users/friends/requests`: solicitudes entrantes y salientes.
+- `POST /api/users/friends/request`: envía `{ "query": "BLK-XXXX" }` (código o nombre).
+- `PUT /api/users/friends/request/:id/accept` / `DELETE /api/users/friends/request/:id`: aceptar o rechazar.
+- `DELETE /api/users/friends/:friendId`: eliminar amigo.
+- `POST /api/users/me/friend-code`: reserva el código de amigo `{ "friendCode": "BLK-XXXX" }`.
+- `POST /api/users/presence`: latido de presencia (`state`, `activity`).
+- `POST /api/billing/google/verify`: valida un `purchaseToken` de Google Play Billing.
+- `/api/rush/*`: BLOKIO RUSH (emparejamiento, invitaciones, sala, bombas, mensajes, ranking).
 
 Las rutas privadas requieren `Authorization: Bearer <Firebase ID token>`. El UID se obtiene del token verificado por Firebase Admin, nunca del cuerpo de la petición. El primer envío puede crear el perfil; la app debe leer la revisión vigente antes de sincronizaciones posteriores.
 

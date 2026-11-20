@@ -179,4 +179,89 @@ async function syncProfile(uid, input) {
   return serializeUser(result.profile);
 }
 
-module.exports = { getProfile, normalizeProfile, syncProfile };
+async function getFriends(uid) {
+  return await userRepository.getFriends(uid);
+}
+
+async function getFriendRequests(uid) {
+  const [incoming, outgoing] = await Promise.all([
+    userRepository.listIncomingRequests(uid),
+    userRepository.listOutgoingRequests(uid),
+  ]);
+  return { incoming, outgoing };
+}
+
+async function sendFriendRequest(uid, input) {
+  const query = (input?.query || input?.friendCode || input?.username || '').trim();
+  if (!query) {
+    throw new ApiError(400, 'INVALID_QUERY', 'Debes ingresar un código de amigo o nombre de usuario.');
+  }
+
+  let targetUser = null;
+  if (query.toUpperCase().startsWith('BLK-')) {
+    targetUser = await userRepository.findByFriendCode(query.toUpperCase());
+  } else {
+    targetUser = await userRepository.findByUsername(query);
+  }
+
+  if (!targetUser) {
+    throw new ApiError(404, 'USER_NOT_FOUND', 'No se encontró ningún jugador con ese código o nombre.');
+  }
+
+  if (targetUser.uid === uid) {
+    throw new ApiError(400, 'CANNOT_ADD_SELF', 'No puedes enviarte una solicitud a ti mismo.');
+  }
+
+  if (await userRepository.isFriend(uid, targetUser.uid)) {
+    throw new ApiError(409, 'ALREADY_FRIENDS', 'Ese jugador ya está en tu lista de amigos.');
+  }
+
+  return await userRepository.createFriendRequest(uid, targetUser.uid);
+}
+
+async function acceptFriendRequest(uid, requestId) {
+  const result = await userRepository.acceptFriendRequest(uid, requestId);
+  if (!result) {
+    throw new ApiError(404, 'REQUEST_NOT_FOUND', 'La solicitud de amistad no existe o ya expiró.');
+  }
+  return result;
+}
+
+async function rejectFriendRequest(uid, requestId) {
+  return await userRepository.rejectFriendRequest(uid, requestId);
+}
+
+async function removeFriend(uid, friendId) {
+  return await userRepository.removeFriend(uid, friendId);
+}
+
+async function registerFriendCode(uid, friendCode) {
+  const result = await userRepository.setFriendCode(uid, friendCode);
+  if (!result.saved) {
+    if (result.reason === 'TAKEN') {
+      throw new ApiError(409, 'FRIEND_CODE_TAKEN', 'Ese código de amigo ya está en uso.');
+    }
+    throw new ApiError(400, 'INVALID_FRIEND_CODE', 'El código de amigo no es válido.');
+  }
+  return result;
+}
+
+async function updatePresence(uid, input) {
+  const state = input?.state || 'online';
+  const activity = input?.activity || 'En el menú';
+  return await userRepository.updatePresence(uid, { state, activity });
+}
+
+module.exports = {
+  getProfile,
+  normalizeProfile,
+  syncProfile,
+  getFriends,
+  getFriendRequests,
+  sendFriendRequest,
+  acceptFriendRequest,
+  rejectFriendRequest,
+  removeFriend,
+  updatePresence,
+  registerFriendCode,
+};
