@@ -1,4 +1,5 @@
 const ApiError = require('../utils/api-error');
+const { auth } = require('../config/firestore');
 const userRepository = require('../repository/user.repository');
 
 const progressFields = [
@@ -342,6 +343,19 @@ async function updatePresence(uid, input) {
   return await userRepository.updatePresence(uid, { state, activity });
 }
 
+/// Elimina la cuenta por completo: datos en Firestore y la cuenta de
+/// Firebase Authentication. El cliente solo debe cerrar sesión después.
+async function deleteAccount(uid) {
+  await userRepository.deleteAccount(uid);
+  try {
+    await auth.deleteUser(uid);
+  } catch (error) {
+    // Si la cuenta ya no existe, el resultado sigue siendo "borrada".
+    if (error?.code !== 'auth/user-not-found') throw error;
+  }
+  return { deleted: true };
+}
+
 module.exports = {
   getProfile,
   normalizeProfile,
@@ -354,4 +368,5 @@ module.exports = {
   removeFriend,
   updatePresence,
   registerFriendCode,
+  deleteAccount,
 };

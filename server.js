@@ -95,6 +95,16 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Páginas legales públicas (requisito de Google Play para publicar la app).
+const publicDir = path.join(__dirname, 'public');
+app.get('/privacy', (req, res) =>
+  res.sendFile(path.join(publicDir, 'privacy.html')),
+);
+app.get('/delete-account', (req, res) =>
+  res.sendFile(path.join(publicDir, 'delete-account.html')),
+);
+app.use(express.static(publicDir));
+
 app.use(errorHandler);
 
 // ============================================================

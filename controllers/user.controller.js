@@ -41,6 +41,10 @@ class UserController extends BaseController {
   updatePresence = this.handle(async (req) => ({
     data: await userService.updatePresence(req.authUser.uid, req.body),
   }));
+
+  deleteAccount = this.handle(async (req) => ({
+    data: await userService.deleteAccount(req.authUser.uid),
+  }));
 }
 
 module.exports = new UserController();

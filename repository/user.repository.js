@@ -257,6 +257,65 @@ async function removeFriend(uid, friendUid) {
   return { success: true };
 }
 
+/// Borra todos los datos del jugador en Firestore. Es idempotente: si se
+/// ejecuta dos veces (por ejemplo tras un error de red) no falla.
+async function deleteAccount(uid) {
+  // 1. Amistades: quitar mi referencia del lado de cada amigo.
+  const friends = await users.doc(uid).collection('friends').get();
+
+  // 2. Solicitudes de amistad en las que participo.
+  const [incoming, outgoing] = await Promise.all([
+    friendRequests.where('toUid', '==', uid).get(),
+    friendRequests.where('fromUid', '==', uid).get(),
+  ]);
+
+  // 3. Rankings: el id del documento de cada entrada es el UID.
+  let entries = null;
+  try {
+    const { FieldPath } = require('firebase-admin/firestore');
+    entries = await db
+      .collectionGroup('entries')
+      .where(FieldPath.documentId(), '==', uid)
+      .get();
+  } catch (_) {
+    // Si el índice aún no existe, seguimos: la cuenta se borra igual.
+  }
+
+  const batch = db.batch();
+  for (const doc of friends.docs) {
+    batch.delete(users.doc(doc.id).collection('friends').doc(uid));
+  }
+  for (const doc of [...incoming.docs, ...outgoing.docs]) {
+    batch.delete(doc.ref);
+  }
+  if (entries) {
+    for (const doc of entries.docs) batch.delete(doc.ref);
+  }
+  await batch.commit();
+
+  // 4. Documento del usuario y todas sus subcolecciones (backup, etc.).
+  await db.recursiveDelete(users.doc(uid));
+
+  // 5. Cola de emparejamiento e invitaciones pendientes de RUSH.
+  await Promise.all([
+    db.collection('rush_matchmaking').doc(uid).delete().catch(() => {}),
+    db
+      .collection('rush_invitations')
+      .where('fromUid', '==', uid)
+      .get()
+      .then((snap) => Promise.all(snap.docs.map((doc) => doc.ref.delete())))
+      .catch(() => {}),
+    db
+      .collection('rush_invitations')
+      .where('toUid', '==', uid)
+      .get()
+      .then((snap) => Promise.all(snap.docs.map((doc) => doc.ref.delete())))
+      .catch(() => {}),
+  ]);
+
+  return { deleted: true };
+}
+
 module.exports = {
   findById,
   findByFriendCode,
@@ -272,4 +331,5 @@ module.exports = {
   listOutgoingRequests,
   isFriend,
   setFriendCode,
+  deleteAccount,
 };

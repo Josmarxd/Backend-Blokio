@@ -6,6 +6,7 @@ const router = express.Router();
 
 router.use(requireAuth);
 router.get('/me', userController.getProfile);
+router.delete('/me', userController.deleteAccount);
 router.put('/me/sync', userController.syncProfile);
 router.get('/friends', userController.getFriends);
 router.get('/friends/requests', userController.getFriendRequests);
