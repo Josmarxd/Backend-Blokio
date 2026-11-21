@@ -38,10 +38,14 @@ async function saveProfile(uid, profileData, expectedRevision) {
 
     const now = new Date();
     const next = {
+      ...(current || {}),
       uid,
       ...profileData,
-      revision: current ? current.revision + 1 : 1,
-      createdAt: current ? current.createdAt : now,
+      profile: { ...(current?.profile || {}), ...profileData.profile },
+      revision: Number.isSafeInteger(current?.revision)
+        ? current.revision + 1
+        : 1,
+      createdAt: current?.createdAt || now,
       updatedAt: now,
     };
     transaction.set(userRef, next);

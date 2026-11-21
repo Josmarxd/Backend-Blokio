@@ -29,7 +29,7 @@ Para desplegar en producción sigue `../DEPLOY.md` (Cloud Run + `--dart-define=A
 
 - `GET /health`: estado del servidor.
 - `GET /api/leaderboard?timeframe=allTime|weekly|daily&limit=50`: ranking público.
-- `POST /api/leaderboard/submit`: envía `{ "score": 1200, "level": 4 }`.
+- `POST /api/leaderboard/submit`: envía `{ "score": 1200, "level": 4, "username": "Blokio" }`; `username` es opcional y debe tener entre 1 y 24 caracteres.
 - `GET /api/users/me`: obtiene el perfil autenticado.
 - `PUT /api/users/me/sync`: sincroniza `profile`, `progress`, `inventory` y `settings`. Incluye `revision` al actualizar un perfil existente para detectar cambios concurrentes.
 - `GET /api/users/friends`: lista de amigos reales.

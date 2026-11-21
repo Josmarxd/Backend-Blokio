@@ -20,3 +20,18 @@ test('rejects invalid scores and levels', () => {
     code: 'INVALID_LEVEL',
   });
 });
+
+test('trims and validates optional leaderboard usernames', () => {
+  assert.deepEqual(
+    validateSubmission({ score: 100, level: 2, username: '  Rosa  ' }),
+    { score: 100, level: 2, username: 'Rosa' },
+  );
+  assert.throws(
+    () => validateSubmission({ score: 100, level: 2, username: '   ' }),
+    { code: 'INVALID_USERNAME' },
+  );
+  assert.throws(
+    () => validateSubmission({ score: 100, level: 2, username: 'a'.repeat(25) }),
+    { code: 'INVALID_USERNAME' },
+  );
+});

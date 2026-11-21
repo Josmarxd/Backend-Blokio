@@ -40,7 +40,20 @@ async function submitScore(uid, score, level, player) {
 
     references.forEach(({ reference }, index) => {
       const current = snapshots[index].exists ? snapshots[index].data() : null;
-      if (current && current.score >= score) return;
+      if (current && current.score >= score) {
+        const profileUpdate = {};
+        if (current.username !== player.username) {
+          profileUpdate.username = player.username;
+        }
+        if (current.avatarIndex !== player.avatarIndex) {
+          profileUpdate.avatarIndex = player.avatarIndex;
+        }
+        if (Object.keys(profileUpdate).length > 0) {
+          profileUpdate.updatedAt = new Date();
+          transaction.update(reference, profileUpdate);
+        }
+        return;
+      }
 
       transaction.set(reference, {
         username: player.username,

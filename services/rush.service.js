@@ -8,7 +8,8 @@ const rushInvites = db.collection('rush_invitations');
 const users = db.collection('users');
 
 const BOARD_SIZE = 8;
-const TURN_MS = 10000;
+const TURN_MS = 7000;
+const TURN_GRACE_MS = 750;
 const GAME_MS = 120000;
 const QUEUE_TTL_MS = 120000;
 const INVITE_TTL_MS = 30000;
@@ -423,14 +424,17 @@ async function withRoom(roomId, uid, mutate) {
           now,
         });
         dirty = true;
-      } else if (now >= turnEndsAt) {
-        // El jugador no movió en 5 s: pierde el turno.
+      } else if (
+        !turnEndsAt ||
+        now.getTime() >= turnEndsAt.getTime() + TURN_GRACE_MS
+      ) {
+        // Tolera la latencia de red al enviar una jugada al final del turno.
         advanceTurn(room, now);
         dirty = true;
       }
     }
 
-    if (mutate) {
+    if (mutate && room.status !== 'finished') {
       const changed = mutate(room, now);
       if (changed !== false) dirty = true;
     }

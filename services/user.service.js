@@ -21,15 +21,69 @@ const inventoryFields = [
   'selectedDialogueSkin',
   'selectedAvatar',
   'selectedBlockSkin',
+  'selectedBackground',
 ];
 const unlockFields = [
   'unlockedThemes',
   'unlockedDialogueSkins',
   'unlockedAvatars',
   'unlockedBlockSkins',
+  'unlockedBackgrounds',
 ];
 const settingFields = ['soundEnabled', 'vibrationEnabled', 'musicEnabled'];
 const languages = new Set(['en', 'es', 'pt', 'fr']);
+const backupKeys = new Set([
+  'best_score',
+  'highest_level',
+  'total_levels_reached',
+  'total_lines_cleared',
+  'best_combo',
+  'total_continues',
+  'games_played',
+  'total_score',
+  'saved_game_v1',
+  'sound_enabled',
+  'vibration_enabled',
+  'music_enabled',
+  'language_code',
+  'coins',
+  'gems',
+  'xp',
+  'player_level',
+  'daily_streak',
+  'last_daily_date',
+  'daily_completed_date',
+  'last_played_date',
+  'daily_challenge_date',
+  'daily_attempted_date',
+  'daily_retry_date',
+  'streak_celebrated_date',
+  'streak_claimed_date',
+  'pending_streak_celebration',
+  'missions_json',
+  'powerups_json',
+  'unlocked_themes',
+  'selected_theme',
+  'unlocked_dialogue_skins',
+  'selected_dialogue_skin',
+  'unlocked_avatars',
+  'selected_avatar',
+  'unlocked_block_skins',
+  'selected_block_skin',
+  'unlocked_backgrounds',
+  'selected_background',
+  'last_advice_text',
+  'last_advice_punchline',
+  'last_advice_date',
+  'pending_advice_round_v1',
+  'leaderboard_json',
+  'player_username',
+  'blokio_rush_points',
+  'blokio_rush_wins',
+  'blokio_rush_losses',
+  'blokio_rush_ties',
+  'blokio_rush_games',
+]);
 
 function requireObject(value, field) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -53,6 +107,40 @@ function pickNonNegativeIntegers(source, fields, section) {
     result[field] = value;
   }
   return result;
+}
+
+function normalizeBackup(value) {
+  const backup = requireObject(value, 'backup');
+  if (backup.version !== 1) {
+    throw new ApiError(400, 'INVALID_PROFILE', 'backup.version no es compatible.');
+  }
+  const values = requireObject(backup.values, 'backup.values');
+  const normalizedValues = {};
+  for (const [key, item] of Object.entries(values)) {
+    if (!backupKeys.has(key)) {
+      throw new ApiError(400, 'INVALID_PROFILE', `backup.values.${key} no es válido.`);
+    }
+    const isValidString = typeof item === 'string' && item.length <= 20000;
+    const isValidNumber =
+      typeof item === 'number' && Number.isSafeInteger(item) && item >= 0;
+    const isValidStringList =
+      Array.isArray(item) &&
+      item.length <= 100 &&
+      item.every((entry) => typeof entry === 'string' && entry.length <= 64);
+    if (
+      !isValidString &&
+      !isValidNumber &&
+      typeof item !== 'boolean' &&
+      !isValidStringList
+    ) {
+      throw new ApiError(400, 'INVALID_PROFILE', `backup.values.${key} no es válido.`);
+    }
+    normalizedValues[key] = item;
+  }
+  if (JSON.stringify(normalizedValues).length > 50000) {
+    throw new ApiError(400, 'INVALID_PROFILE', 'backup.values es demasiado grande.');
+  }
+  return { version: 1, values: normalizedValues };
 }
 
 function normalizeProfile(input) {
@@ -130,12 +218,14 @@ function normalizeProfile(input) {
     normalizedSettings.languageCode = settings.languageCode;
   }
 
-  return {
+  const normalized = {
     profile: { username: username.trim(), avatarIndex },
     progress: pickNonNegativeIntegers(progress, progressFields, 'progress'),
     inventory: normalizedInventory,
     settings: normalizedSettings,
   };
+  if (input.backup !== undefined) normalized.backup = normalizeBackup(input.backup);
+  return normalized;
 }
 
 function serializeUser(user) {

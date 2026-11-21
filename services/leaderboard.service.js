@@ -23,7 +23,22 @@ function validateSubmission(input) {
   if (!Number.isSafeInteger(level) || level < 1 || level > 100000) {
     throw new ApiError(400, 'INVALID_LEVEL', 'level debe ser un entero positivo válido.');
   }
-  return { score, level };
+  let username;
+  if (input.username !== undefined) {
+    if (
+      typeof input.username !== 'string' ||
+      input.username.trim().length < 1 ||
+      input.username.trim().length > 24
+    ) {
+      throw new ApiError(
+        400,
+        'INVALID_USERNAME',
+        'username debe tener entre 1 y 24 caracteres.',
+      );
+    }
+    username = input.username.trim();
+  }
+  return { score, level, username };
 }
 
 async function getLeaderboard(timeframe = 'allTime', limit = 50) {
@@ -45,7 +60,7 @@ async function getLeaderboard(timeframe = 'allTime', limit = 50) {
 }
 
 async function submitScore(uid, input) {
-  const { score, level } = validateSubmission(input);
+  const { score, level, username } = validateSubmission(input);
   const user = await userRepository.findById(uid);
   if (!user) {
     throw new ApiError(
@@ -57,7 +72,7 @@ async function submitScore(uid, input) {
 
   const periods = getUtcPeriodIds();
   await leaderboardRepository.submitScore(uid, score, level, {
-    username: user.profile.username,
+    username: username || user.profile.username,
     avatarIndex: user.profile.avatarIndex,
     periodIds: periods,
   });
