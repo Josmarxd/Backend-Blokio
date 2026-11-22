@@ -9,7 +9,8 @@ const users = db.collection('users');
 
 const BOARD_SIZE = 8;
 const TURN_MS = 7000;
-const TURN_GRACE_MS = 750;
+// Margen mínimo de red: el turno se entrega al rival a los 7 s exactos.
+const TURN_GRACE_MS = 150;
 const GAME_MS = 120000;
 const QUEUE_TTL_MS = 120000;
 const INVITE_TTL_MS = 30000;
@@ -206,6 +207,24 @@ function canPlace(board, shapeId, row, col) {
   return true;
 }
 
+function autoClearBoardCenter(room) {
+  // Limpia 3x3 en el centro del tablero para liberar espacio automáticamente.
+  const rStart = 2;
+  const cStart = 2;
+  for (let r = rStart; r <= rStart + 3; r++) {
+    for (let c = cStart; c <= cStart + 3; c++) {
+      room.board[r][c] = 0;
+    }
+  }
+  room.lastBomb = {
+    uid: room.currentTurnUid,
+    row: 3,
+    col: 3,
+    at: new Date(),
+  };
+  room.boardVersion = (room.boardVersion || 1) + 1;
+}
+
 function advanceTurn(room, now) {
   const nextUid = opponentUidOf(room, room.currentTurnUid);
   if (!nextUid) return;
@@ -213,6 +232,13 @@ function advanceTurn(room, now) {
   room.turnNumber = (room.turnNumber || 1) + 1;
   room.turnStartedAt = now;
   room.turnExpiresAt = new Date(now.getTime() + TURN_MS);
+
+  // Si al siguiente jugador no le cabe ninguna pieza en el tablero,
+  // la bomba explota automáticamente en el tablero para liberar espacio.
+  const nextPlayer = room.players[nextUid];
+  if (nextPlayer && !hasAnyPlacement(room.board, nextPlayer)) {
+    autoClearBoardCenter(room);
+  }
 }
 
 function dealHandIfNeeded(player) {
