@@ -9,14 +9,15 @@ const users = db.collection('users');
 
 const BOARD_SIZE = 8;
 const TURN_MS = 7000;
-// Margen mínimo de red: el turno se entrega al rival a los 7 s exactos.
-const TURN_GRACE_MS = 150;
+// Margen de red: el cliente ve 0 s a los 7 s exactos, pero el servidor tolera
+// 500 ms extra para no descartar una jugada enviada justo al final del turno.
+const TURN_GRACE_MS = 500;
 const GAME_MS = 120000;
 const QUEUE_TTL_MS = 120000;
 const INVITE_TTL_MS = 30000;
 const ABANDON_MS = 120000;
 // Pausa breve para que ambas pantallas abran la sala antes de empezar el turno.
-const INTRO_MS = 1000;
+const INTRO_MS = 300;
 
 // Debe coincidir con el orden de BlockShape.all en Flutter (lib/core/models/block_shape.dart).
 const SHAPES = [
@@ -155,6 +156,8 @@ function activateRoomIfReady(room, now) {
   room.turnExpiresAt = new Date(startsAt.getTime() + TURN_MS);
   room.gameStartedAt = startsAt;
   room.gameExpiresAt = new Date(startsAt.getTime() + GAME_MS);
+  // Sube la versión: los clientes aceptan este estado como el más reciente.
+  room.boardVersion = (room.boardVersion || 1) + 1;
   return true;
 }
 
@@ -206,7 +209,7 @@ function canPlace(board, shapeId, row, col) {
 }
 
 function autoClearBoardCenter(room) {
-  // Limpia 3x3 en el centro del tablero para liberar espacio automáticamente.
+  // Limpia el centro del tablero para liberar espacio automáticamente.
   const rStart = 2;
   const cStart = 2;
   for (let r = rStart; r <= rStart + 3; r++) {
@@ -227,6 +230,10 @@ function advanceTurn(room, now, reason = 'move') {
   const nextUid = opponentUidOf(room, room.currentTurnUid);
   if (!nextUid) return;
   const endedUid = room.currentTurnUid;
+  // IMPORTANTE: el cambio de turno también sube la versión. Antes un cambio
+  // por tiempo agotado no la subía y una respuesta vieja (de antes del
+  // cambio) podía devolver el "es tu turno" al cliente → errores NOT_YOUR_TURN.
+  room.boardVersion = (room.boardVersion || 1) + 1;
   room.dragPreview = null;
   room.currentTurnUid = nextUid;
   room.turnNumber = (room.turnNumber || 1) + 1;
@@ -353,7 +360,6 @@ function buildClientState(room, uid, now) {
     gameEndsAt: (gameEndsAt || now).toISOString(),
     turnEndsAt: (turnEndsAt || now).toISOString(),
     totalSecondsLeft: totalSeconds,
-    totalSecondsLeft: totalSeconds,
     turnSecondsLeft: turnSeconds,
     secondsUntilStart: startsAt
       ? Math.max(0, Math.ceil((startsAt.getTime() - now.getTime()) / 1000))
@@ -384,11 +390,13 @@ setRoomSerializer(buildClientState);
  */
 async function withRoom(roomId, uid, mutate) {
   let finalState = null;
-  let nowRef = new Date();
   let shouldBroadcast = false;
   let roomSnapshot = null;
 
   await db.runTransaction(async (transaction) => {
+    // Si la transacción se reintenta, se parte de cero.
+    shouldBroadcast = false;
+
     const ref = rushRooms.doc(roomId);
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists) {
@@ -398,7 +406,6 @@ async function withRoom(roomId, uid, mutate) {
     const room = snapshot.data();
     roomSnapshot = room;
     const now = new Date();
-    nowRef = now;
     let dirty = false;
 
     if (!room.players[uid]) {
@@ -500,7 +507,7 @@ async function withRoom(roomId, uid, mutate) {
         const isWinner = winnerUid && winnerUid === userRef.id;
         const isLoser = !isTie && !isWinner;
         // Sistema de copas: +2 por victoria, -1 por derrota, 0 por empate
-        const points = isWinner ? 2 : (isLoser ? -1 : 0);
+        const points = isWinner ? 2 : isLoser ? -1 : 0;
         const current = doc.exists ? doc.data() : {};
         const comp = current.competitive || {
           rushPoints: 0,
@@ -532,16 +539,17 @@ async function joinMatchmaking({ uid, username, avatarIndex, copas }) {
   let createdRoom = null;
 
   await db.runTransaction(async (transaction) => {
+    // Si la transacción se reintenta, se parte de cero.
+    payload = null;
+    createdRoom = null;
+
     const mineRef = rushQueue.doc(uid);
     const now = new Date();
     const parsedCopas = Number.isInteger(copas) ? copas : 0;
 
     // ── 1. LECTURAS ─────────────────────────────────────────────────────
     // Firestore exige que TODAS las lecturas ocurran antes de la primera
-    // escritura. Antes se borraba el documento de la cola y luego se leía la
-    // sala, lo que lanzaba "Firestore transactions require all reads to be
-    // executed before all writes" y dejaba al jugador que esperaba fuera de
-    // la partida.
+    // escritura.
     const mineDoc = await transaction.get(mineRef);
     const queueSnapshot = await transaction.get(
       rushQueue.orderBy('queuedAt', 'asc').limit(25),
@@ -761,6 +769,10 @@ async function respondInvite(inviteId, uid, accept, username, avatarIndex) {
   let createdRoom = null;
 
   await db.runTransaction(async (transaction) => {
+    // Si la transacción se reintenta, se parte de cero.
+    result = null;
+    createdRoom = null;
+
     const inviteRef = rushInvites.doc(inviteId);
     const snapshot = await transaction.get(inviteRef);
     if (!snapshot.exists) {
@@ -911,8 +923,16 @@ async function useBomb(roomId, uid, { row, col }) {
     const rowNumber = Math.min(BOARD_SIZE - 1, Math.max(0, Number(row) || 0));
     const colNumber = Math.min(BOARD_SIZE - 1, Math.max(0, Number(col) || 0));
 
-    for (let r = Math.max(0, rowNumber - 1); r <= Math.min(BOARD_SIZE - 1, rowNumber + 1); r++) {
-      for (let c = Math.max(0, colNumber - 1); c <= Math.min(BOARD_SIZE - 1, colNumber + 1); c++) {
+    for (
+      let r = Math.max(0, rowNumber - 1);
+      r <= Math.min(BOARD_SIZE - 1, rowNumber + 1);
+      r++
+    ) {
+      for (
+        let c = Math.max(0, colNumber - 1);
+        c <= Math.min(BOARD_SIZE - 1, colNumber + 1);
+        c++
+      ) {
         room.board[r][c] = 0;
       }
     }
@@ -939,6 +959,9 @@ async function markReady(roomId, uid) {
   });
 }
 
+// Se conserva por compatibilidad con versiones antiguas de la app. Las
+// versiones nuevas envían el arrastre por WebSocket (ver realtime.js) y no
+// llaman a este endpoint.
 async function updateDragPreview(roomId, uid, { slot, row, col, x, y, clear }) {
   return withRoom(roomId, uid, (room, now) => {
     if (room.status !== 'active' || room.currentTurnUid !== uid) return false;
