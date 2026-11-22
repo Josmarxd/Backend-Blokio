@@ -16,8 +16,9 @@ const GAME_MS = 120000;
 const QUEUE_TTL_MS = 120000;
 const INVITE_TTL_MS = 30000;
 const ABANDON_MS = 120000;
-// Pausa breve para que ambas pantallas abran la sala antes de empezar el turno.
-const INTRO_MS = 300;
+// Pausa tras confirmar ambos jugadores. Cubre el "GO" del cliente (~450 ms)
+// más la latencia, para que nadie pierda tiempo de turno al inicio.
+const INTRO_MS = 700;
 
 // Debe coincidir con el orden de BlockShape.all en Flutter (lib/core/models/block_shape.dart).
 const SHAPES = [
@@ -116,6 +117,9 @@ function buildRoom({ player1, player2, isPrivate, roomId }) {
     result: null,
     rankingAwarded: false,
     lastBomb: null,
+    // Última jugada con las celdas EXACTAS que rompió (incluye la pieza recién
+    // colocada). El cliente la usa para animar la explosión completa.
+    lastMove: null,
   };
 }
 
@@ -171,6 +175,11 @@ function scoringFor(lines, comboAfterIncrement) {
   return lines + (comboAfterIncrement > 1 ? 1 : 0);
 }
 
+/**
+ * Elimina las filas/columnas completas y devuelve cuántas líneas fueron y las
+ * celdas exactas rotas (con su valor shapeId+1). Se usan objetos {r,c,v} y no
+ * arrays anidados porque Firestore no admite arrays dentro de arrays.
+ */
 function clearFullLines(board) {
   const fullRows = [];
   const fullCols = [];
@@ -187,13 +196,24 @@ function clearFullLines(board) {
     }
     if (full) fullCols.push(c);
   }
+
+  const seen = new Set();
+  const cells = [];
+  const take = (r, c) => {
+    const key = r * BOARD_SIZE + c;
+    if (seen.has(key)) return;
+    seen.add(key);
+    cells.push({ r, c, v: board[r][c] });
+  };
   for (const r of fullRows) {
-    for (let c = 0; c < BOARD_SIZE; c++) board[r][c] = 0;
+    for (let c = 0; c < BOARD_SIZE; c++) take(r, c);
   }
   for (const c of fullCols) {
-    for (let r = 0; r < BOARD_SIZE; r++) board[r][c] = 0;
+    for (let r = 0; r < BOARD_SIZE; r++) take(r, c);
   }
-  return fullRows.length + fullCols.length;
+  for (const { r, c } of cells) board[r][c] = 0;
+
+  return { count: fullRows.length + fullCols.length, cells };
 }
 
 function canPlace(board, shapeId, row, col) {
@@ -376,6 +396,7 @@ function buildClientState(room, uid, now) {
     opponent: serializePlayer(room.board, room.players[opponentUid], opponentUid),
     lastMessage: room.lastMessage || null,
     lastBomb: room.lastBomb || null,
+    lastMove: room.lastMove || null,
     result: room.status === 'finished' ? serializeResult(room, uid) : null,
   };
 }
@@ -878,7 +899,7 @@ async function makeMove(roomId, uid, { row, col, slot }) {
     player.handUsed[slotNumber] = true;
     dealHandIfNeeded(player);
 
-    const lines = clearFullLines(room.board);
+    const { count: lines, cells: clearedCells } = clearFullLines(room.board);
     room.boardVersion = (room.boardVersion || 1) + 1;
     room.dragPreview = null;
     if (lines > 0) {
@@ -888,6 +909,16 @@ async function makeMove(roomId, uid, { row, col, slot }) {
     } else {
       player.combo = 0;
     }
+
+    // Se guarda ANTES de advanceTurn para que el id use el turno de esta jugada.
+    room.lastMove = {
+      id: `${room.turnNumber}_${uid}`,
+      uid,
+      shapeId,
+      row: rowNumber,
+      col: colNumber,
+      cleared: clearedCells,
+    };
 
     advanceTurn(room, now, 'move');
     return true;
