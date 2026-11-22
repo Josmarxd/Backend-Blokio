@@ -78,6 +78,8 @@ class RushController extends BaseController {
       slot: req.body.slot,
       row: req.body.row,
       col: req.body.col,
+      x: req.body.x,
+      y: req.body.y,
       clear: req.body.clear === true,
     }),
   }));

@@ -14,11 +14,9 @@ const TURN_GRACE_MS = 150;
 const GAME_MS = 120000;
 const QUEUE_TTL_MS = 120000;
 const INVITE_TTL_MS = 30000;
-const ABANDON_MS = 30000;
-// Margen para la presentación "VS" de ambos jugadores antes del primer turno.
-// Cubre la animación de la app (3 s) más el sondeo del emparejamiento.
-// Así nadie pierde su turno mientras ve la presentación.
-const INTRO_MS = 7000;
+const ABANDON_MS = 120000;
+// Pausa breve para que ambas pantallas abran la sala antes de empezar el turno.
+const INTRO_MS = 1000;
 
 // Debe coincidir con el orden de BlockShape.all en Flutter (lib/core/models/block_shape.dart).
 const SHAPES = [
@@ -112,6 +110,7 @@ function buildRoom({ player1, player2, isPrivate, roomId }) {
     status: 'waiting',
     boardVersion: 1,
     dragPreview: null,
+    lastTurnChange: null,
     lastMessage: null,
     result: null,
     rankingAwarded: false,
@@ -142,15 +141,14 @@ function finishRoom(room, { winnerUid = null, reason, now }) {
   return room.result;
 }
 
-/// Arranca la sala SOLO cuando los dos jugadores terminaron su animación
-/// inicial. Así nadie pierde turno mientras ve el "READY · 3 · 2 · 1 · GO".
+/// Arranca la sala solo después de que ambos jugadores confirmaron que están.
 function activateRoomIfReady(room, now) {
   if (room.status !== 'waiting') return false;
   const allReady = Object.keys(room.players).every((id) =>
     !!asDate(room.players[id].readyAt),
   );
   if (!allReady) return false;
-  const startsAt = new Date(now.getTime() + 5000);
+  const startsAt = new Date(now.getTime() + INTRO_MS);
   room.status = 'active';
   room.startsAt = startsAt;
   room.turnStartedAt = startsAt;
@@ -225,11 +223,20 @@ function autoClearBoardCenter(room) {
   room.boardVersion = (room.boardVersion || 1) + 1;
 }
 
-function advanceTurn(room, now) {
+function advanceTurn(room, now, reason = 'move') {
   const nextUid = opponentUidOf(room, room.currentTurnUid);
   if (!nextUid) return;
+  const endedUid = room.currentTurnUid;
+  room.dragPreview = null;
   room.currentTurnUid = nextUid;
   room.turnNumber = (room.turnNumber || 1) + 1;
+  room.lastTurnChange = {
+    turnNumber: room.turnNumber,
+    uid: endedUid,
+    nextUid,
+    reason,
+    at: now,
+  };
   room.turnStartedAt = now;
   room.turnExpiresAt = new Date(now.getTime() + TURN_MS);
 
@@ -354,6 +361,7 @@ function buildClientState(room, uid, now) {
     currentTurnUid: room.currentTurnUid,
     firstTurnUid: room.firstTurnUid,
     turnNumber: room.turnNumber,
+    lastTurnChange: room.lastTurnChange || null,
     boardVersion: room.boardVersion || 1,
     dragPreview: room.dragPreview || null,
     isMyTurn: room.status === 'active' && room.currentTurnUid === uid,
@@ -455,7 +463,7 @@ async function withRoom(roomId, uid, mutate) {
         now.getTime() >= turnEndsAt.getTime() + TURN_GRACE_MS
       ) {
         // Tolera la latencia de red al enviar una jugada al final del turno.
-        advanceTurn(room, now);
+        advanceTurn(room, now, 'timeout');
         dirty = true;
       }
     }
@@ -869,7 +877,7 @@ async function makeMove(roomId, uid, { row, col, slot }) {
       player.combo = 0;
     }
 
-    advanceTurn(room, now);
+    advanceTurn(room, now, 'move');
     return true;
   });
 }
@@ -931,7 +939,7 @@ async function markReady(roomId, uid) {
   });
 }
 
-async function updateDragPreview(roomId, uid, { slot, row, col, clear }) {
+async function updateDragPreview(roomId, uid, { slot, row, col, x, y, clear }) {
   return withRoom(roomId, uid, (room, now) => {
     if (room.status !== 'active' || room.currentTurnUid !== uid) return false;
     if (clear || slot == null) {
@@ -941,11 +949,24 @@ async function updateDragPreview(roomId, uid, { slot, row, col, clear }) {
     }
     const shapeId = room.players[uid].hand[Number(slot)];
     if (shapeId == null || room.players[uid].handUsed[Number(slot)]) return false;
+    const targetRow = Math.max(0, Math.min(7, Number(row) || 0));
+    const targetCol = Math.max(0, Math.min(7, Number(col) || 0));
+    const shapeColumns =
+      Math.max(...SHAPES[shapeId].map((cell) => cell[1])) + 1;
+    const shapeRows = Math.max(...SHAPES[shapeId].map((cell) => cell[0])) + 1;
+    const pointerX = Number(x);
+    const pointerY = Number(y);
     room.dragPreview = {
       uid,
       slot: Number(slot),
-      row: Math.max(0, Math.min(7, Number(row) || 0)),
-      col: Math.max(0, Math.min(7, Number(col) || 0)),
+      row: targetRow,
+      col: targetCol,
+      x: Number.isFinite(pointerX)
+        ? Math.max(0, Math.min(1, pointerX))
+        : (targetCol + shapeColumns / 2) / 8,
+      y: Number.isFinite(pointerY)
+        ? Math.max(0, Math.min(1, pointerY))
+        : (targetRow + shapeRows / 2) / 8,
       shapeId,
       at: now,
     };

@@ -42,6 +42,8 @@ Para desplegar en producción sigue `../DEPLOY.md` (Cloud Run + `--dart-define=A
 - `POST /api/billing/google/verify`: valida un `purchaseToken` de Google Play Billing.
 - `/api/rush/*`: BLOKIO RUSH (emparejamiento, invitaciones, sala, bombas, mensajes, ranking).
 
+Si la app se cierra durante una partida RUSH, guarda localmente la sala y el UID para reanudarla al volver con la misma cuenta. El servidor permite hasta 120 segundos sin conexión antes de declarar abandono; esta recuperación requiere que el backend siga accesible.
+
 Las rutas privadas requieren `Authorization: Bearer <Firebase ID token>`. El UID se obtiene del token verificado por Firebase Admin, nunca del cuerpo de la petición. El primer envío puede crear el perfil; la app debe leer la revisión vigente antes de sincronizaciones posteriores.
 
 Ejemplo del cuerpo de sincronización inicial (sin `revision`):
