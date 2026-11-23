@@ -16,9 +16,11 @@ const GAME_MS = 120000;
 const QUEUE_TTL_MS = 120000;
 const INVITE_TTL_MS = 30000;
 const ABANDON_MS = 120000;
-// Pausa tras confirmar ambos jugadores. Cubre el "GO" del cliente (~450 ms)
-// más la latencia, para que nadie pierda tiempo de turno al inicio.
-const INTRO_MS = 700;
+// Presentación sincronizada: desde que AMBOS jugadores confirman hasta que
+// arranca el reloj. Equivale a la cuenta 3-2-1 de la pantalla (3 s) + margen.
+// Las pantallas calculan la cuenta contra `startsAt`, así que la intro termina
+// EXACTAMENTE cuando empieza el turno y el primer jugador tiene sus 7 s.
+const INTRO_MS = 3500;
 
 // Debe coincidir con el orden de BlockShape.all en Flutter (lib/core/models/block_shape.dart).
 const SHAPES = [
